@@ -6,6 +6,10 @@ import { ParagraphBlock } from './ParagraphBlock';
 import { HeadingBlock } from './HeadingBlock';
 import { ListBlock } from './ListBlock';
 import { TodoBlock } from './TodoBlock';
+import { QuoteBlock } from './QuoteBlock';
+import { CodeBlock } from './CodeBlock';
+import { ToggleBlock } from './ToggleBlock';
+import { TableBlock } from './TableBlock';
 
 interface BlockProps {
     block: BlockType;
@@ -13,8 +17,9 @@ interface BlockProps {
     isSelected?: boolean;
     onUpdate?: (id: string, updates: Partial<BlockType>) => void;
     onEnter?: (id: string) => void;
-    onBackspace?: (id: string) => void;
+    onBackspace?: (id: string, atStart?: boolean) => void;
     onFocus?: (id: string) => void;
+    children?: React.ReactNode;
 }
 
 export function Block({
@@ -25,13 +30,14 @@ export function Block({
     onEnter,
     onBackspace,
     onFocus,
+    children,
 }: BlockProps) {
     const commonProps = {
         isSelected,
-        onUpdate,
-        onEnter,
-        onBackspace,
-        onFocus,
+        onUpdate: onUpdate || (() => {}),
+        onEnter: onEnter || (() => {}),
+        onBackspace: onBackspace || (() => {}),
+        onFocus: onFocus || (() => {}),
     };
 
     switch (block.type) {
@@ -51,13 +57,16 @@ export function Block({
             return <TodoBlock block={block} {...commonProps} />;
 
         case 'quote':
-            return (
-                <div className="notion-block">
-                    <div className="notion-quote">
-                        <ParagraphBlock block={block} {...commonProps} />
-                    </div>
-                </div>
-            );
+            return <QuoteBlock block={block} {...commonProps} />;
+
+        case 'code':
+            return <CodeBlock block={block} {...commonProps} />;
+
+        case 'toggle':
+            return <ToggleBlock block={block} {...commonProps}>{children}</ToggleBlock>;
+
+        case 'table':
+            return <TableBlock block={block as any} {...commonProps} />;
 
         case 'divider':
             return (
@@ -80,16 +89,7 @@ export function Block({
                 </div>
             );
 
-        case 'code':
-            return (
-                <div className="notion-block">
-                    <div className="notion-code">
-                        <ParagraphBlock block={block} {...commonProps} />
-                    </div>
-                </div>
-            );
-
         default:
-            return <ParagraphBlock block={block} {...commonProps} />;
+            return <ParagraphBlock block={block as any} {...commonProps} />;
     }
 }

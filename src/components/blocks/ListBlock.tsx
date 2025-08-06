@@ -10,7 +10,7 @@ interface ListBlockProps {
     isSelected?: boolean;
     onUpdate?: (id: string, updates: Partial<Block>) => void;
     onEnter?: (id: string) => void;
-    onBackspace?: (id: string) => void;
+    onBackspace?: (id: string, atStart?: boolean) => void;
     onFocus?: (id: string) => void;
 }
 
@@ -44,9 +44,18 @@ export function ListBlock({
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             onEnter?.(block.id);
-        } else if (e.key === 'Backspace' && content === '') {
-            e.preventDefault();
-            onBackspace?.(block.id);
+        } else if (e.key === 'Backspace') {
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                if (range.startOffset === 0 && range.endOffset === 0) {
+                    e.preventDefault();
+                    onBackspace?.(block.id, true);
+                } else if (content === '') {
+                    e.preventDefault();
+                    onBackspace?.(block.id, false);
+                }
+            }
         }
     };
 

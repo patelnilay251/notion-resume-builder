@@ -7,6 +7,7 @@ import { createTextBlock, createBlock, createHeadingBlock, createListBlock, inse
 import { Block } from './blocks/Block';
 import { useResume } from '@/hooks/useResume';
 import { Save, AlertCircle } from 'lucide-react';
+import { FontSelector } from './FontSelector';
 
 interface EditorProps {
     initialState?: EditorState;
@@ -105,6 +106,7 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
         editorState.selection?.blockId || null
     );
     const [hasChanges, setHasChanges] = useState(false);
+    const [currentFont, setCurrentFont] = useState('var(--notion-font-family)');
     const { saveResume, loadResume, isSaving, error } = useResume();
 
     const updateState = useCallback((newState: EditorState) => {
@@ -119,7 +121,7 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
 
         const timeoutId = setTimeout(async () => {
             try {
-                await saveResume(editorState);
+                await saveResume(editorState, 'default', { font: currentFont });
                 setHasChanges(false);
             } catch (err) {
                 console.error('Auto-save failed:', err);
@@ -127,7 +129,7 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
         }, 2000); // Auto-save after 2 seconds of inactivity
 
         return () => clearTimeout(timeoutId);
-    }, [editorState, hasChanges, saveResume]);
+    }, [editorState, hasChanges, saveResume, currentFont]);
 
     // Load initial data on mount
     useEffect(() => {
@@ -135,10 +137,13 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
 
         const loadInitialData = async () => {
             try {
-                const savedState = await loadResume();
-                if (savedState) {
-                    setEditorState(savedState);
-                    setSelectedBlockId(savedState.selection?.blockId || null);
+                const result = await loadResume();
+                if (result) {
+                    setEditorState(result.state);
+                    setSelectedBlockId(result.state.selection?.blockId || null);
+                    if (result.metadata.font) {
+                        setCurrentFont(result.metadata.font);
+                    }
                 }
             } catch (err) {
                 console.error('Failed to load resume:', err);
@@ -150,12 +155,12 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
 
     const handleManualSave = useCallback(async () => {
         try {
-            await saveResume(editorState);
+            await saveResume(editorState, 'default', { font: currentFont });
             setHasChanges(false);
         } catch (err) {
             console.error('Manual save failed:', err);
         }
-    }, [editorState, saveResume]);
+    }, [editorState, saveResume, currentFont]);
 
     const handleBlockUpdate = useCallback((blockId: string, updates: Partial<BlockType>) => {
         const newBlocks = updateBlockContent(editorState.blocks, blockId, updates);
@@ -211,33 +216,78 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
         setSelectedBlockId(newBlock.id);
     }, [editorState, updateState]);
 
-    const handleBackspace = useCallback((blockId: string) => {
+    const handleBackspace = useCallback((blockId: string, atStart: boolean = false) => {
         const currentBlock = editorState.blocks[blockId];
         if (!currentBlock || !currentBlock.parentId) return;
 
         const parent = editorState.blocks[currentBlock.parentId];
-        if (!parent || parent.content.length <= 1) return; // Don't delete the last block
+        if (!parent) return;
 
-        // Find the previous block
+        // Find the current and previous block indices
         const currentIndex = parent.content.indexOf(blockId);
-        if (currentIndex <= 0) return; // Don't delete the first block
+        if (currentIndex < 0) return;
 
-        const previousBlockId = parent.content[currentIndex - 1];
-
-        // Remove the current block
-        const newBlocks = removeBlockFromParent(editorState.blocks, blockId);
-
-        updateState({
-            ...editorState,
-            blocks: newBlocks,
-            selection: {
-                blockId: previousBlockId,
-                start: 0,
-                end: 0,
-            },
-        });
-
-        setSelectedBlockId(previousBlockId);
+        // If at start of block and not the first block, merge with previous
+        if (atStart && currentIndex > 0) {
+            const previousBlockId = parent.content[currentIndex - 1];
+            const previousBlock = editorState.blocks[previousBlockId];
+            
+            if (previousBlock && previousBlock.type === currentBlock.type) {
+                // Merge content with previous block
+                const mergedContent = (previousBlock.properties.title || '') + (currentBlock.properties.title || '');
+                const cursorPosition = (previousBlock.properties.title || '').length;
+                
+                // Update previous block with merged content
+                const updatedBlocks = updateBlockContent(editorState.blocks, previousBlockId, {
+                    properties: { ...previousBlock.properties, title: mergedContent }
+                });
+                
+                // Remove current block
+                const newBlocks = removeBlockFromParent(updatedBlocks, blockId);
+                
+                updateState({
+                    ...editorState,
+                    blocks: newBlocks,
+                    selection: {
+                        blockId: previousBlockId,
+                        start: cursorPosition,
+                        end: cursorPosition,
+                    },
+                });
+                
+                setSelectedBlockId(previousBlockId);
+            } else if (previousBlock) {
+                // Different block types or can't merge - just move cursor to end of previous block
+                const prevContent = previousBlock.properties.title || '';
+                updateState({
+                    ...editorState,
+                    selection: {
+                        blockId: previousBlockId,
+                        start: prevContent.length,
+                        end: prevContent.length,
+                    },
+                });
+                setSelectedBlockId(previousBlockId);
+            }
+        } else if (!atStart && currentBlock.properties.title === '' && parent.content.length > 1) {
+            // Empty block and not at start - delete it
+            const newIndex = Math.max(0, currentIndex - 1);
+            const targetBlockId = parent.content[newIndex];
+            
+            const newBlocks = removeBlockFromParent(editorState.blocks, blockId);
+            
+            updateState({
+                ...editorState,
+                blocks: newBlocks,
+                selection: {
+                    blockId: targetBlockId,
+                    start: 0,
+                    end: 0,
+                },
+            });
+            
+            setSelectedBlockId(targetBlockId);
+        }
     }, [editorState, updateState]);
 
     const handlePageTitleChange = useCallback((e: React.FormEvent<HTMLInputElement>) => {
@@ -258,6 +308,7 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
     return (
         <motion.div
             className="notion-page"
+            style={{ fontFamily: currentFont }}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: "easeOut" }}
@@ -278,6 +329,11 @@ export function Editor({ initialState, onStateChange }: EditorProps) {
                     </div>
 
                     <div className="notion-header-right">
+                        <FontSelector 
+                            currentFont={currentFont}
+                            onChange={setCurrentFont}
+                        />
+                        
                         <AnimatePresence mode="wait">
                             {error && (
                                 <motion.div

@@ -57,6 +57,49 @@ export function createTodoBlock(
     return createBlock('to_do', { title: text, checked }, parentId);
 }
 
+export function createQuoteBlock(
+    text: string = '',
+    parentId?: BlockId
+): Block {
+    return createBlock('quote', { title: text }, parentId);
+}
+
+export function createCodeBlock(
+    code: string = '',
+    language: string = 'javascript',
+    parentId?: BlockId
+): Block {
+    return createBlock('code', { title: code, language }, parentId);
+}
+
+export function createToggleBlock(
+    text: string = '',
+    isOpen: boolean = false,
+    parentId?: BlockId
+): Block {
+    return createBlock('toggle', { title: text, isOpen }, parentId);
+}
+
+export function createTableBlock(
+    rows: string[][] = [['', ''], ['', '']],
+    headers: string[] = ['Column 1', 'Column 2'],
+    parentId?: BlockId
+): Block {
+    return createBlock('table', { rows, headers }, parentId);
+}
+
+export function createCalloutBlock(
+    text: string = '',
+    icon: string = '💡',
+    parentId?: BlockId
+): Block {
+    return createBlock('callout', { title: text, icon }, parentId);
+}
+
+export function createDividerBlock(parentId?: BlockId): Block {
+    return createBlock('divider', {}, parentId);
+}
+
 // Rich text utilities
 export function createRichText(
     content: string,

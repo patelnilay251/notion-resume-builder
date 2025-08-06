@@ -3,6 +3,14 @@
 import { useState, useCallback } from 'react';
 import { EditorState } from '@/types/blocks';
 
+interface ResumeMetadata {
+    createdAt: string;
+    updatedAt: string;
+    version: number;
+    font?: string;
+    theme?: 'light' | 'dark';
+}
+
 interface UseResumeOptions {
     autoSave?: boolean;
     autoSaveDelay?: number;
@@ -12,20 +20,27 @@ interface UseResumeReturn {
     isLoading: boolean;
     isSaving: boolean;
     error: string | null;
-    saveResume: (state: EditorState, id?: string) => Promise<void>;
-    loadResume: (id?: string) => Promise<EditorState | null>;
+    errorCode?: string;
+    saveResume: (state: EditorState, id?: string, metadata?: Partial<ResumeMetadata>) => Promise<void>;
+    loadResume: (id?: string) => Promise<{ state: EditorState; metadata: ResumeMetadata } | null>;
     deleteResume: (id?: string) => Promise<void>;
-    listResumes: () => Promise<string[]>;
+    listResumes: () => Promise<Array<{ id: string; metadata: ResumeMetadata }>>;
 }
 
 export function useResume(options: UseResumeOptions = {}): UseResumeReturn {
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [errorCode, setErrorCode] = useState<string | undefined>();
 
-    const saveResume = useCallback(async (state: EditorState, id: string = 'default') => {
+    const saveResume = useCallback(async (
+        state: EditorState, 
+        id: string = 'default',
+        metadata?: Partial<ResumeMetadata>
+    ) => {
         setIsSaving(true);
         setError(null);
+        setErrorCode(undefined);
 
         try {
             const response = await fetch('/api/resume', {
@@ -36,16 +51,14 @@ export function useResume(options: UseResumeOptions = {}): UseResumeReturn {
                 body: JSON.stringify({
                     id,
                     state,
+                    metadata,
                 }),
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to save resume');
-            }
-
             const result = await response.json();
-            if (!result.success) {
+            
+            if (!response.ok || !result.success) {
+                setErrorCode(result.code);
                 throw new Error(result.error || 'Failed to save resume');
             }
         } catch (err) {
@@ -57,28 +70,28 @@ export function useResume(options: UseResumeOptions = {}): UseResumeReturn {
         }
     }, []);
 
-    const loadResume = useCallback(async (id: string = 'default'): Promise<EditorState | null> => {
+    const loadResume = useCallback(async (id: string = 'default'): Promise<{ state: EditorState; metadata: ResumeMetadata } | null> => {
         setIsLoading(true);
         setError(null);
+        setErrorCode(undefined);
 
         try {
             const response = await fetch(`/api/resume?id=${id}`);
+            const result = await response.json();
 
             if (response.status === 404) {
                 return null; // Resume doesn't exist
             }
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to load resume');
-            }
-
-            const result = await response.json();
-            if (!result.success) {
+            if (!response.ok || !result.success) {
+                setErrorCode(result.code);
                 throw new Error(result.error || 'Failed to load resume');
             }
 
-            return result.data;
+            return {
+                state: result.data,
+                metadata: result.metadata,
+            };
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to load resume';
             setError(errorMessage);
@@ -91,19 +104,17 @@ export function useResume(options: UseResumeOptions = {}): UseResumeReturn {
     const deleteResume = useCallback(async (id: string = 'default') => {
         setIsLoading(true);
         setError(null);
+        setErrorCode(undefined);
 
         try {
             const response = await fetch(`/api/resume?id=${id}`, {
                 method: 'DELETE',
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to delete resume');
-            }
-
             const result = await response.json();
-            if (!result.success) {
+            
+            if (!response.ok || !result.success) {
+                setErrorCode(result.code);
                 throw new Error(result.error || 'Failed to delete resume');
             }
         } catch (err) {
@@ -115,22 +126,20 @@ export function useResume(options: UseResumeOptions = {}): UseResumeReturn {
         }
     }, []);
 
-    const listResumes = useCallback(async (): Promise<string[]> => {
+    const listResumes = useCallback(async (): Promise<Array<{ id: string; metadata: ResumeMetadata }>> => {
         setIsLoading(true);
         setError(null);
+        setErrorCode(undefined);
 
         try {
             const response = await fetch('/api/resume', {
                 method: 'PUT',
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to list resumes');
-            }
-
             const result = await response.json();
-            if (!result.success) {
+            
+            if (!response.ok || !result.success) {
+                setErrorCode(result.code);
                 throw new Error(result.error || 'Failed to list resumes');
             }
 
@@ -148,6 +157,7 @@ export function useResume(options: UseResumeOptions = {}): UseResumeReturn {
         isLoading,
         isSaving,
         error,
+        errorCode,
         saveResume,
         loadResume,
         deleteResume,
