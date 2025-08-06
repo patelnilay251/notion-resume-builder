@@ -22,6 +22,7 @@ export type BlockType =
     | 'toggle'
     | 'image'
     | 'code'
+    | 'table'
     | 'page';
 
 export interface TextFormat {
@@ -109,6 +110,14 @@ export interface DividerBlock extends BaseBlock {
     type: 'divider';
 }
 
+export interface TableBlock extends BaseBlock {
+    type: 'table';
+    properties: BlockProperties & {
+        rows?: string[][];
+        headers?: string[];
+    };
+}
+
 export interface PageBlock extends BaseBlock {
     type: 'page';
     properties: BlockProperties & {
@@ -128,6 +137,7 @@ export type Block =
     | CodeBlock
     | ImageBlock
     | DividerBlock
+    | TableBlock
     | PageBlock;
 
 // Editor state

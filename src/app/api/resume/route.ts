@@ -1,32 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { EditorState } from '@/types/blocks';
+import { EditorState, BlockType } from '@/types/blocks';
 
-// In a real application, you would use a database like PostgreSQL, MongoDB, or Supabase
-// For this demo, we'll use a simple in-memory store
-const resumeStore = new Map<string, EditorState>();
+// Enhanced in-memory store with metadata
+interface ResumeData {
+    state: EditorState;
+    metadata: {
+        createdAt: string;
+        updatedAt: string;
+        version: number;
+        font?: string;
+        theme?: 'light' | 'dark';
+    };
+}
+
+const resumeStore = new Map<string, ResumeData>();
+
+// Validation helper
+function validateBlockType(type: string): type is BlockType {
+    const validTypes: BlockType[] = [
+        'paragraph', 'heading1', 'heading2', 'heading3',
+        'bulleted_list', 'numbered_list', 'to_do', 'quote',
+        'divider', 'callout', 'toggle', 'image', 'code',
+        'table', 'page'
+    ];
+    return validTypes.includes(type as BlockType);
+}
+
+function validateEditorState(state: any): state is EditorState {
+    if (!state || typeof state !== 'object') return false;
+    if (!state.blocks || typeof state.blocks !== 'object') return false;
+    if (!state.page || typeof state.page !== 'object') return false;
+    if (!state.page.id || !state.page.title) return false;
+    
+    // Validate all blocks
+    for (const blockId in state.blocks) {
+        const block = state.blocks[blockId];
+        if (!block.id || !block.type || !validateBlockType(block.type)) {
+            return false;
+        }
+        if (!block.properties || typeof block.properties !== 'object') {
+            return false;
+        }
+    }
+    
+    return true;
+}
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id') || 'default';
 
     try {
-        const resume = resumeStore.get(id);
+        const resumeData = resumeStore.get(id);
 
-        if (!resume) {
+        if (!resumeData) {
             return NextResponse.json(
-                { error: 'Resume not found' },
+                { 
+                    success: false,
+                    error: 'Resume not found',
+                    code: 'RESUME_NOT_FOUND' 
+                },
                 { status: 404 }
             );
         }
 
         return NextResponse.json({
             success: true,
-            data: resume,
+            data: resumeData.state,
+            metadata: resumeData.metadata,
         });
     } catch (error) {
         console.error('Error fetching resume:', error);
         return NextResponse.json(
-            { error: 'Failed to fetch resume' },
+            { 
+                success: false,
+                error: 'Failed to fetch resume',
+                code: 'FETCH_ERROR'
+            },
             { status: 500 }
         );
     }
@@ -35,35 +85,49 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { id = 'default', state } = body;
+        const { id = 'default', state, metadata = {} } = body;
 
-        if (!state || typeof state !== 'object') {
+        if (!validateEditorState(state)) {
             return NextResponse.json(
-                { error: 'Invalid resume state' },
+                { 
+                    success: false,
+                    error: 'Invalid resume state structure',
+                    code: 'INVALID_STATE'
+                },
                 { status: 400 }
             );
         }
 
-        // Validate the state structure
-        if (!state.blocks || !state.page || typeof state.blocks !== 'object') {
-            return NextResponse.json(
-                { error: 'Invalid resume state structure' },
-                { status: 400 }
-            );
-        }
+        const existingData = resumeStore.get(id);
+        const now = new Date().toISOString();
+        
+        const resumeData: ResumeData = {
+            state,
+            metadata: {
+                createdAt: existingData?.metadata.createdAt || now,
+                updatedAt: now,
+                version: (existingData?.metadata.version || 0) + 1,
+                font: metadata.font,
+                theme: metadata.theme,
+            }
+        };
 
-        // Store the resume
-        resumeStore.set(id, state as EditorState);
+        resumeStore.set(id, resumeData);
 
         return NextResponse.json({
             success: true,
             message: 'Resume saved successfully',
             id,
+            version: resumeData.metadata.version,
         });
     } catch (error) {
         console.error('Error saving resume:', error);
         return NextResponse.json(
-            { error: 'Failed to save resume' },
+            { 
+                success: false,
+                error: 'Failed to save resume',
+                code: 'SAVE_ERROR'
+            },
             { status: 500 }
         );
     }
@@ -75,14 +139,19 @@ export async function DELETE(request: NextRequest) {
 
     try {
         const existed = resumeStore.has(id);
-        resumeStore.delete(id);
-
+        
         if (!existed) {
             return NextResponse.json(
-                { error: 'Resume not found' },
+                { 
+                    success: false,
+                    error: 'Resume not found',
+                    code: 'RESUME_NOT_FOUND'
+                },
                 { status: 404 }
             );
         }
+        
+        resumeStore.delete(id);
 
         return NextResponse.json({
             success: true,
@@ -91,25 +160,37 @@ export async function DELETE(request: NextRequest) {
     } catch (error) {
         console.error('Error deleting resume:', error);
         return NextResponse.json(
-            { error: 'Failed to delete resume' },
+            { 
+                success: false,
+                error: 'Failed to delete resume',
+                code: 'DELETE_ERROR'
+            },
             { status: 500 }
         );
     }
 }
 
-// GET /api/resume/list - List all resume IDs
+// List all resumes with metadata
 export async function PUT(request: NextRequest) {
     try {
-        const ids = Array.from(resumeStore.keys());
+        const resumes = Array.from(resumeStore.entries()).map(([id, data]) => ({
+            id,
+            metadata: data.metadata,
+        }));
 
         return NextResponse.json({
             success: true,
-            data: ids,
+            data: resumes,
+            total: resumes.length,
         });
     } catch (error) {
         console.error('Error listing resumes:', error);
         return NextResponse.json(
-            { error: 'Failed to list resumes' },
+            { 
+                success: false,
+                error: 'Failed to list resumes',
+                code: 'LIST_ERROR'
+            },
             { status: 500 }
         );
     }
